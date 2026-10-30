@@ -1,0 +1,8 @@
+{
+  "name": "framebase",
+  "version": "1.0.4",
+  "private": true,
+  "scripts": {
+    "build": "node --check static/app.js"
+  }
+}

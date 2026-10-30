@@ -1,0 +1,24 @@
+name: framebase
+
+services:
+  framebase:
+    image: mouyanbin/framebase:latest
+    container_name: framebase
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "5256:5256"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - /volume1/docker/framebase/config:/app/config
+      - /volume1/docker/framebase/backups:/app/backups
+      - /volume1/docker/framebase/fonts:/app/fonts
+      - /volume1/docker/framebase/templates:/app/templates
+      - /volume1/docker/framebase/layouts:/app/layouts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5256/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

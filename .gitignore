@@ -1,0 +1,27 @@
+# Local runtime state and credentials
+/config/
+/backups/
+/logs/
+/fonts/
+/templates/
+/layouts/
+/.venv/
+/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Local preview/export artifacts
+symedia-preview.jpg
+temp_*.jpg
+temp_*.png
+dist/
+build/
+*.egg-info/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

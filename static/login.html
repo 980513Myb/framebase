@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统登录 - FrameBase</title>
+    <script>
+        (() => {
+            let mode = 'night';
+            try {
+                const savedMode = localStorage.getItem('framebaseUiMode');
+                if (savedMode === 'light' || savedMode === 'night') mode = savedMode;
+            } catch (_) {}
+            document.documentElement.classList.add(`frame-mode-${mode}`);
+            document.documentElement.style.colorScheme = mode === 'light' ? 'light' : 'dark';
+        })();
+    </script>
+    <link rel="icon" type="image/png" href="/static/framebase-icon.png">
+    <link rel="shortcut icon" type="image/png" href="/static/framebase-icon.png">
+    <link rel="apple-touch-icon" href="/static/framebase-icon.png">
+    <link rel="apple-touch-icon-precomposed" href="/static/framebase-icon.png">
+    <script src="/static/vendor/vue.global.prod.js"></script>
+    <script src="/static/vendor/axios.min.js"></script>
+    <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=framebase-login-20260802-29">
+    
+    <style>
+        /* === 基础重置 === */
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        #login-app {
+            position: relative;
+            width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        /* === 1. 动态粒子背景 (Canvas) === */
+        #dynamic-bg {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none;
+            background: radial-gradient(circle at center, #1b2735 0%, #090a0f 100%);
+        }
+
+        /* === 2. 海报墙层 === */
+        .layer-wall {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+            display: flex; flex-direction: column; 
+            justify-content: stretch;
+            padding: 0; gap: 0;
+            opacity: 0.8; 
+            pointer-events: none;
+        }
+        
+        .wall-row {
+            display: flex; width: 100%; overflow: hidden; position: relative;
+            align-items: center; 
+            flex: 1; min-height: 0;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+        }
+        
+        .wall-track {
+            display: flex; gap: 0;
+            animation-timing-function: linear; animation-iteration-count: infinite;
+            will-change: transform;
+            height: 100%;
+        }
+        
+        /* 统一速度 140s */
+        .wall-row.left .wall-track { animation-name: scroll-left; animation-duration: 140s; }
+        .wall-row.right .wall-track { animation-name: scroll-right; animation-duration: 140s; }
+        
+        .wall-item {
+            flex: 0 0 auto;
+            height: 100%; aspect-ratio: 16/9;
+            overflow: hidden; background: #111; position: relative;
+        }
+        .wall-item img { 
+            width: 100%; height: 100%; object-fit: cover; 
+            filter: brightness(0.7);
+        }
+
+        @keyframes scroll-left { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        @keyframes scroll-right { 0% { transform: translateX(-50%); } 100% { transform: translateX(0); } }
+
+        /* === 3. 遮罩层 === */
+        .layer-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 2;
+            background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.8) 100%);
+        }
+
+        /* === 4. 磨砂登录卡片 === */
+        .login-card {
+            position: relative; z-index: 10;
+            width: 380px; padding: 45px;
+            border-radius: 24px;
+            background: rgba(15, 23, 42, 0.4); 
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); 
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .login-card:hover { 
+            transform: translateY(-5px); 
+            background: rgba(15, 23, 42, 0.5); 
+            border-color: rgba(255,255,255,0.25);
+        }
+
+        .brand-area { text-align: center; margin-bottom: 35px; }
+        .logo-icon {
+            width: 78px;
+            height: 78px;
+            margin: 0 auto 16px;
+            display: block;
+            border-radius: 22px;
+            object-fit: contain;
+            filter: invert(1) drop-shadow(0 0 24px rgba(45, 212, 191, 0.35));
+        }
+        h1 { margin: 0; font-size: 25px; font-weight: 800; color: #fff; letter-spacing: 0; }
+        .subtitle { margin: 8px 0 0; font-size: 12px; color: rgba(255,255,255,0.62); letter-spacing: 1px; }
+
+        .input-group { position: relative; margin-bottom: 20px; }
+        .input-group i { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.6); font-size: 15px; transition: 0.3s; }
+        .custom-input {
+            width: 100%; padding: 14px 14px 14px 45px;
+            background: rgba(0, 0, 0, 0.2); 
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px; color: #fff; font-size: 14px; outline: none;
+            transition: all 0.3s;
+        }
+        .custom-input:focus { background: rgba(0, 0, 0, 0.4); border-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
+        .custom-input:focus + i { color: #3b82f6; }
+
+        .login-btn {
+            width: 100%; padding: 14px; border: none; border-radius: 12px;
+            background: linear-gradient(90deg, #3b82f6, #2563eb);
+            color: white; font-size: 14px; font-weight: 700; cursor: pointer;
+            margin-top: 10px; transition: 0.3s; 
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .login-btn:hover { filter: brightness(1.1); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(59, 130, 246, 0.5); }
+        
+        .error-msg { color: #fca5a5; font-size: 12px; text-align: center; margin-top: 20px; min-height: 20px; }
+        .footer { position: absolute; bottom: 20px; font-size: 11px; color: rgba(255,255,255,0.4); z-index: 20; letter-spacing: 1px; }
+        
+        .fade-enter-active, .fade-leave-active { transition: opacity 1.5s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .shake { animation: shake 0.4s ease-in-out; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+        /* 与主界面共用 framebaseUiMode，登录前也保持一致的明亮主题。 */
+        .frame-mode-light body { background-color: #eaf1f5; }
+        .frame-mode-light #dynamic-bg { background: radial-gradient(circle at center, #f8fbfd 0%, #dce8ef 100%); }
+        .frame-mode-light .layer-wall { opacity: 1; }
+        .frame-mode-light .wall-row { border-bottom-color: rgba(29, 57, 74, 0.08); }
+        .frame-mode-light .wall-item { background: #d7e2e9; }
+        .frame-mode-light .wall-item img { filter: none; }
+        .frame-mode-light .layer-overlay { display: none; }
+        .frame-mode-light .login-card {
+            background: rgba(255, 255, 255, 0.84);
+            border-color: rgba(50, 81, 100, 0.18);
+            box-shadow: 0 24px 60px rgba(38, 66, 83, 0.22);
+        }
+        .frame-mode-light .login-card:hover { background: rgba(255, 255, 255, 0.92); border-color: rgba(25, 128, 168, 0.32); }
+        .frame-mode-light .logo-icon { filter: drop-shadow(0 0 22px rgba(17, 143, 192, 0.2)); }
+        .frame-mode-light h1 { color: #102331; }
+        .frame-mode-light .subtitle { color: #587080; }
+        .frame-mode-light .input-group i { color: #607888; }
+        .frame-mode-light .custom-input { background: rgba(239, 245, 248, 0.92); border-color: #c7d6df; color: #142d3c; }
+        .frame-mode-light .custom-input::placeholder { color: #708493; opacity: 1; }
+        .frame-mode-light .custom-input:focus { background: #fff; border-color: #168fc1; box-shadow: 0 0 0 4px rgba(22, 143, 193, 0.14); }
+        .frame-mode-light .custom-input:focus + i { color: #168fc1; }
+        .frame-mode-light .error-msg { color: #b42318; }
+        .frame-mode-light .footer { color: rgba(29, 57, 74, 0.65); }
+    </style>
+</head>
+<body>
+
+    <div id="login-app">
+        <canvas id="dynamic-bg"></canvas>
+
+        <transition name="fade">
+            <div class="layer-wall" v-if="hasCovers">
+                <div class="wall-row left">
+                    <div class="wall-track"><div v-for="(item, i) in wallRows[0]" :key="'r1-'+i" class="wall-item"><img :src="item.cover_url" loading="lazy"></div></div>
+                </div>
+                <div class="wall-row right">
+                    <div class="wall-track"><div v-for="(item, i) in wallRows[1]" :key="'r2-'+i" class="wall-item"><img :src="item.cover_url" loading="lazy"></div></div>
+                </div>
+                <div class="wall-row left">
+                    <div class="wall-track"><div v-for="(item, i) in wallRows[2]" :key="'r3-'+i" class="wall-item"><img :src="item.cover_url" loading="lazy"></div></div>
+                </div>
+                <div class="wall-row right">
+                    <div class="wall-track"><div v-for="(item, i) in wallRows[3]" :key="'r4-'+i" class="wall-item"><img :src="item.cover_url" loading="lazy"></div></div>
+                </div>
+                <div class="wall-row left">
+                    <div class="wall-track"><div v-for="(item, i) in wallRows[4]" :key="'r5-'+i" class="wall-item"><img :src="item.cover_url" loading="lazy"></div></div>
+                </div>
+            </div>
+        </transition>
+
+        <div class="layer-overlay"></div>
+
+        <div class="login-card" :class="{shake: isError}">
+            <div class="brand-area">
+                <img class="logo-icon" src="/static/framebase-icon.png" alt="FrameBase">
+                <h1>FrameBase</h1>
+                <p class="subtitle">Emby 封面工作台</p>
+            </div>
+
+            <div class="input-group">
+                <input v-model="form.username" type="text" placeholder="admin" class="custom-input" @keyup.enter="login">
+                <i class="fa-regular fa-user"></i>
+            </div>
+
+            <div class="input-group">
+                <input v-model="form.password" type="password" placeholder="password" class="custom-input" @keyup.enter="login">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+
+            <button class="login-btn" @click="login">
+                <span v-if="!loading">立即登录</span>
+                <span v-else><i class="fa-solid fa-circle-notch fa-spin"></i> 验证中...</span>
+            </button>
+
+            <div class="error-msg">
+                <span v-if="errorMsg"><i class="fa-solid fa-circle-exclamation"></i> {{ errorMsg }}</span>
+            </div>
+        </div>
+
+        <div class="footer">Copyright © 2026 FrameBase. All Rights Reserved.</div>
+    </div>
+
+    <script>
+        const { createApp, reactive, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const form = reactive({ username: '', password: '' });
+                const errorMsg = ref('');
+                const loading = ref(false);
+                const isError = ref(false);
+                
+                const wallRows = reactive([[], [], [], [], []]);
+                const hasCovers = ref(false);
+
+                // --- 1. Canvas 动画逻辑 (集成在 Setup 中) ---
+                const startParticles = () => {
+                    const canvas = document.getElementById('dynamic-bg');
+                    // 如果 Vue 还没渲染出 canvas，稍后重试
+                    if (!canvas) {
+                        requestAnimationFrame(startParticles);
+                        return;
+                    }
+                    
+                    const ctx = canvas.getContext('2d');
+                    let width, height, particles = [];
+                    const particleCount = 80;
+
+                    function resize() {
+                        width = canvas.width = window.innerWidth;
+                        height = canvas.height = window.innerHeight;
+                    }
+
+                    class Particle {
+                        constructor() { this.reset(); this.y = Math.random() * height; }
+                        reset() {
+                            this.x = Math.random() * width;
+                            this.y = height + Math.random() * 100;
+                            this.size = Math.random() * 2 + 0.5;
+                            this.speedY = Math.random() * 0.5 + 0.2;
+                            this.opacity = Math.random() * 0.5 + 0.1;
+                        }
+                        update() {
+                            this.y -= this.speedY;
+                            if (this.y < -10) this.reset();
+                        }
+                        draw() {
+                            ctx.beginPath();
+                            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                            const lightMode = document.documentElement.classList.contains('frame-mode-light');
+                            ctx.fillStyle = lightMode
+                                ? `rgba(37, 83, 108, ${this.opacity * 0.45})`
+                                : `rgba(255, 255, 255, ${this.opacity})`;
+                            ctx.fill();
+                        }
+                    }
+
+                    function initParticles() {
+                        particles = [];
+                        for (let i = 0; i < particleCount; i++) particles.push(new Particle());
+                    }
+
+                    function animate() {
+                        ctx.clearRect(0, 0, width, height);
+                        particles.forEach(p => { p.update(); p.draw(); });
+                        requestAnimationFrame(animate);
+                    }
+
+                    window.addEventListener('resize', () => { resize(); initParticles(); });
+                    resize(); initParticles(); animate();
+                };
+
+                // --- 2. 海报墙逻辑 ---
+                const initBackground = async () => {
+                    try {
+                        const configRes = await axios.get('/api/load');
+                        if (!configRes.data || !configRes.data.servers || configRes.data.servers.length === 0) return;
+
+                        const svr = configRes.data.servers[0];
+                        if (svr.host && svr.key) {
+                            const res = await axios.post('/api/library_covers', { 
+                                host: svr.host, key: svr.key, public_host: svr.public_host,
+                                user_name: svr.user_name || ''
+                            });
+                            
+                            const covers = res.data.libraries || [];
+                            if (covers.length > 0) {
+                                distributeCovers(covers);
+                                hasCovers.value = true;
+                            }
+                        }
+                    } catch (e) { console.log("Bg load fail"); }
+                };
+
+                const distributeCovers = (covers) => {
+                    const minItems = 12;
+                    const rowCount = 5;
+                    const rows = Array.from({ length: rowCount }, () => []);
+                    covers.forEach((item, idx) => { rows[idx % rowCount].push(item); });
+                    for (let i = 0; i < rowCount; i++) {
+                        let current = [...rows[i]];
+                        if (current.length === 0) current = [...covers];
+                        if (current.length > 0) {
+                            while (current.length < minItems) { current = [...current, ...current]; }
+                            wallRows[i] = [...current, ...current];
+                        }
+                    }
+                };
+
+                // --- 3. 登录逻辑 ---
+                const login = async () => {
+                    if(!form.username || !form.password) {
+                        errorMsg.value = '请输入用户名和密码'; triggerShake(); return;
+                    }
+                    loading.value = true; errorMsg.value = '';
+                    try {
+                        const res = await axios.post('/api/login', form);
+                        if (res.data.status === 'ok') {
+                            localStorage.setItem('isLoggedIn', 'true');
+                            localStorage.setItem('authToken', res.data.token || '');
+                            localStorage.setItem('username', res.data.username || form.username);
+                            window.location.href = 'index.html';
+                        }
+                    } catch (e) {
+                        errorMsg.value = '登录失败：账号或密码错误'; triggerShake();
+                    } finally { loading.value = false; }
+                };
+
+                const triggerShake = () => { isError.value = true; setTimeout(() => isError.value = false, 400); };
+
+                onMounted(() => {
+                    // 确保先启动 Canvas 动画
+                    startParticles();
+                    // 再加载海报
+                    initBackground();
+                });
+
+                return { form, login, errorMsg, loading, isError, wallRows, hasCovers };
+            }
+        }).mount('#login-app');
+    </script>
+</body>
+</html>
